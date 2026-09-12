@@ -5,6 +5,7 @@ import { CustomerView } from './components/customer/CustomerView';
 import { KitchenView } from './components/kitchen/KitchenView';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { AdminLogin } from './components/admin/AdminLogin';
+import { ResetPasswordView } from './components/admin/ResetPasswordView';
 import { soundService } from './services/sound';
 import {
   ChefHat,
@@ -23,6 +24,12 @@ function getQRMenuTableId(): string | null {
   return null;
 }
 
+// The emailed "Forgot password?" link lands on /reset-password?token=...
+function getResetPasswordToken(): string | null {
+  if (window.location.pathname.replace(/\/$/, '') !== '/reset-password') return null;
+  return new URLSearchParams(window.location.search).get('token');
+}
+
 type StaffView = 'kitchen' | 'admin';
 
 export const App: React.FC = () => {
@@ -35,6 +42,7 @@ export const App: React.FC = () => {
 
   // Detect if this is a QR-scanned customer session
   const [qrTableId] = useState<string | null>(() => getQRMenuTableId());
+  const [resetToken] = useState<string | null>(() => getResetPasswordToken());
 
   // Staff view state (only relevant when NOT in customer QR mode)
   const [staffView, setStaffView] = useState<StaffView>(() => {
@@ -129,6 +137,20 @@ export const App: React.FC = () => {
   // No nav bar, no staff controls — the customer only sees the menu.
   if (qrTableId !== null) {
     return <CustomerView tableId={qrTableId} />;
+  }
+
+  // ─── PASSWORD RESET LINK ──────────────────────────────────────────────────
+  if (resetToken !== null) {
+    return (
+      <ResetPasswordView
+        cafe={cafe}
+        token={resetToken}
+        onDone={() => {
+          window.history.replaceState({}, '', '/admin');
+          window.location.reload();
+        }}
+      />
+    );
   }
 
   // ─── STAFF INTERFACE ──────────────────────────────────────────────────────

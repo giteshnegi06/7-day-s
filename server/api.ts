@@ -3,7 +3,8 @@ import swaggerUi from 'swagger-ui-express';
 import { query } from './db.js';
 import { swaggerDocument } from './swagger.js';
 import { notifyResourceChanged } from './realtime.js';
-import { hashPassword, verifyPassword } from './auth.js';
+import { hashPassword, verifyPassword, generateResetToken, hashResetToken } from './auth.js';
+import { isMailConfigured, sendPasswordResetEmail } from './mailer.js';
 
 export const apiRouter = express.Router();
 apiRouter.use(express.json());
@@ -416,6 +417,102 @@ apiRouter.post('/auth/change-password', async (req: Request, res: Response) => {
       [hashPassword(newPassword), row.id]
     );
     res.json(mapStaff(updated.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- FORGOT PASSWORD (email link) ---
+// Step 1: the person enters their email on the login page. If it matches an
+// account, a single-use link is emailed to it. The response is the same
+// either way so the form can't be used to discover which emails have accounts.
+const RESET_TOKEN_TTL_MINUTES = 30;
+
+function appBaseUrl(req: Request): string {
+  // APP_BASE_URL wins (set it on Vercel to the public site URL). Otherwise
+  // fall back to wherever this request came from — right for local dev.
+  const configured = process.env.APP_BASE_URL;
+  if (configured) return configured.replace(/\/$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https');
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  return `${proto}://${host}`;
+}
+
+apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!isMailConfigured()) {
+      return res.status(503).json({
+        error: 'Password reset email is not set up for this cafe. Ask whoever hosts the app to configure SMTP_USER / SMTP_PASS.',
+      });
+    }
+
+    const result = await query('SELECT * FROM admin_users WHERE email = $1', [
+      String(email).toLowerCase().trim(),
+    ]);
+    const row = result.rows[0];
+    const genericOk = { ok: true, message: 'If that email has a staff account, a reset link has been sent to it.' };
+    if (!row) return res.json(genericOk);
+
+    const token = generateResetToken();
+    await query(
+      `INSERT INTO password_resets (token_hash, user_id, expires_at)
+       VALUES ($1, $2, now() + ($3 || ' minutes')::interval)`,
+      [hashResetToken(token), row.id, String(RESET_TOKEN_TTL_MINUTES)]
+    );
+
+    const cafe = await query('SELECT name FROM cafes LIMIT 1');
+    const cafeName = cafe.rows[0]?.name || 'Cafe';
+    const resetUrl = `${appBaseUrl(req)}/reset-password?token=${token}`;
+
+    try {
+      await sendPasswordResetEmail({
+        to: row.email,
+        name: row.name || 'there',
+        cafeName,
+        resetUrl,
+        expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+      });
+    } catch (mailErr: any) {
+      console.error('[POST /auth/forgot-password] Email send failed:', mailErr.message);
+      return res.status(502).json({ error: 'Could not send the reset email right now. Please try again in a minute.' });
+    }
+    res.json(genericOk);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Step 2: the emailed link opens /reset-password?token=... which posts the
+// token with the new password. The token must exist, be unused and unexpired.
+apiRouter.post('/auth/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Missing token or new password' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    const found = await query(
+      `SELECT r.token_hash, r.user_id, r.expires_at, r.used_at, u.email
+       FROM password_resets r JOIN admin_users u ON u.id = r.user_id
+       WHERE r.token_hash = $1`,
+      [hashResetToken(String(token))]
+    );
+    const row = found.rows[0];
+    if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        error: 'This reset link is invalid or has expired. Request a new one from the login page.',
+      });
+    }
+    await query('UPDATE admin_users SET password_hash = $1 WHERE id = $2', [
+      hashPassword(newPassword),
+      row.user_id,
+    ]);
+    await query('UPDATE password_resets SET used_at = now() WHERE token_hash = $1', [row.token_hash]);
+    res.json({ ok: true, email: row.email });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

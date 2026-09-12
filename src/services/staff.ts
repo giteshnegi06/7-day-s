@@ -56,6 +56,22 @@ export const staffService = {
     });
   },
 
+  // Forgot-password, step 1: asks the server to email a one-time reset link.
+  forgotPassword(email: string): Promise<{ ok: true; message: string }> {
+    return request<{ ok: true; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  // Forgot-password, step 2: the token from that link plus the new password.
+  resetPasswordWithToken(token: string, newPassword: string): Promise<{ ok: true; email: string }> {
+    return request<{ ok: true; email: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+  },
+
   // Self-service: the signed-in person proves they know the current password.
   changePassword(email: string, currentPassword: string, newPassword: string): Promise<AdminUser> {
     return request<AdminUser>('/auth/change-password', {
