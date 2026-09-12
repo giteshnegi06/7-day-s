@@ -4,7 +4,6 @@ import { usePendingServiceRequests, SERVICE_REQUEST_LABELS } from '../../service
 import { soundService } from '../../services/sound';
 
 interface ServiceRequestsPanelProps {
-  // Kitchen display is dark; admin console is light.
   theme: 'dark' | 'light';
 }
 
@@ -16,8 +15,10 @@ function formatAge(createdAt: number, now: number): string {
 }
 
 // Pending "Need Water" / "Call Server" requests, oldest first, each with a
-// Done button. Renders nothing when there is nothing waiting so it never
-// takes up space on a quiet floor.
+// Done button. Shown only in the Admin console: these are floor-staff jobs,
+// so they deliberately stay off the Kitchen display and never distract the
+// cooks. Renders nothing when there is nothing waiting so it never takes up
+// space on a quiet floor.
 export const ServiceRequestsPanel: React.FC<ServiceRequestsPanelProps> = ({ theme }) => {
   const { requests, resolve } = usePendingServiceRequests();
   const [now, setNow] = React.useState(Date.now());

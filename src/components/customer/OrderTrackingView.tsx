@@ -657,8 +657,8 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Sends the request to the server, where it shows up on the Kitchen display
-  // and Admin dashboard until staff mark it done. If this table already has
+  // Sends the request to the server, where it shows up on the Admin
+  // dashboard until staff mark it done. If this table already has
   // the same request open, the server hands that one back instead of paging
   // the staff a second time.
   const handleCallStaff = async (type: ServiceRequestType) => {
