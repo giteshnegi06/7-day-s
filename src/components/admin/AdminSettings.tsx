@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { CafeInfo } from '../../types';
-import { Save, RotateCcw, ShieldCheck, Store, Percent, Phone, MapPin, Sparkles, Image as ImageIcon, Upload } from 'lucide-react';
-import { storageService } from '../../services/storage';
+import { AdminUser, CafeInfo } from '../../types';
+import { Save, ShieldCheck, Store, Percent, Phone, MapPin, Sparkles, Image as ImageIcon, Upload, KeyRound, Lock, Loader2 } from 'lucide-react';
+import { staffService } from '../../services/staff';
 
 // Keep uploaded cafe images reasonably small — they're fetched on every
 // cafe-info poll across every device, so an unbounded upload would bloat
@@ -10,14 +10,62 @@ const MAX_LOGO_FILE_BYTES = 500 * 1024;
 
 interface AdminSettingsProps {
   cafe: CafeInfo;
+  currentUser: AdminUser;
   onUpdateCafe: (updated: CafeInfo) => void;
 }
 
-export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, onUpdateCafe }) => {
+export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, currentUser, onUpdateCafe }) => {
   const [formData, setFormData] = useState<CafeInfo>(cafe);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The signed-in admin's own password. Staff passwords are reset from the
+  // Staff Accounts page; an admin login is only ever changed here, by its
+  // owner, and only with the current password in hand.
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('Please fill in all three password fields.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New password and confirmation do not match.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError('New password must be different from the current one.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await staffService.changePassword(currentUser.email, currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess(true);
+      setTimeout(() => setPasswordSuccess(false), 4000);
+    } catch (err: any) {
+      setPasswordError(err.message || 'Could not change password');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -50,20 +98,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, onUpdateCafe
     });
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
-  };
-
-  // Everything the app shows lives in the database; this device only keeps a
-  // cache of it. Resync throws that cache away and reloads from the server.
-  const handleReset = async () => {
-    if (
-      window.confirm(
-        "Clear this device's cached data and reload the cafe, tables, menu and orders from the database?"
-      )
-    ) {
-      await storageService.resyncFromServer();
-      setFormData(storageService.getCafe());
-      alert('Data reloaded from the database.');
-    }
   };
 
   return (
@@ -252,22 +286,104 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, onUpdateCafe
         </div>
 
         {/* Actions */}
-        <div className="pt-5 border-t border-stone-100 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleReset}
-            className="px-4 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Resync from Database</span>
-          </button>
-
+        <div className="pt-5 border-t border-stone-100 flex justify-end">
           <button
             type="submit"
             className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>Save Changes</span>
+          </button>
+        </div>
+      </form>
+
+      {/* Admin Password */}
+      <form
+        onSubmit={handleChangePassword}
+        className="bg-white rounded-3xl border border-stone-200 p-6 shadow-2xs space-y-5 text-xs"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-amber-600" />
+              Admin Password
+            </h3>
+            <p className="text-[11px] text-stone-500 mt-1">
+              Change the password for your admin login, <span className="font-semibold text-stone-700">{currentUser.email}</span>.
+              Kitchen and staff passwords are managed under Staff Accounts.
+            </p>
+          </div>
+        </div>
+
+        {passwordError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 font-semibold rounded-xl">
+            {passwordError}
+          </div>
+        )}
+        {passwordSuccess && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold rounded-xl flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            Password changed. Use the new password next time you sign in.
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block font-bold text-stone-700 uppercase tracking-wider mb-1">
+              Current Password
+            </label>
+            <div className="relative">
+              <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block font-bold text-stone-700 uppercase tracking-wider mb-1">
+              New Password
+            </label>
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block font-bold text-stone-700 uppercase tracking-wider mb-1">
+              Confirm New Password
+            </label>
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-5 border-t border-stone-100 flex justify-end">
+          <button
+            type="submit"
+            disabled={isChangingPassword}
+            className="px-6 py-2.5 bg-stone-900 hover:bg-black disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            {isChangingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+            <span>{isChangingPassword ? 'Updating...' : 'Change Password'}</span>
           </button>
         </div>
       </form>

@@ -357,9 +357,9 @@ apiRouter.patch('/admin-users/:id/password', async (req: Request, res: Response)
   }
 });
 
-// Verifies a staff login against admin_users. The demo "Cafe Admin" quick
-// sign-in bypasses this entirely (no account needed for the owner), but any
-// staff account created here must present the real password to get in.
+// Verifies a staff login against admin_users. This is the only way into the
+// staff portal — there is no built-in or demo account, so every sign-in must
+// match a real account row and its password.
 apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body || {};
@@ -374,6 +374,35 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     res.json(mapStaff(row));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lets a signed-in person change their own password. Unlike the admin-side
+// reset above, this insists on the current password, so an unlocked admin
+// session alone can't silently take over the account.
+apiRouter.post('/auth/change-password', async (req: Request, res: Response) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body || {};
+    if (!email || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Missing email, current password or new password' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    const result = await query('SELECT * FROM admin_users WHERE email = $1', [
+      String(email).toLowerCase().trim(),
+    ]);
+    const row = result.rows[0];
+    if (!row || !row.password_hash || !verifyPassword(currentPassword, row.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    const updated = await query(
+      'UPDATE admin_users SET password_hash = $1 WHERE id = $2 RETURNING *',
+      [hashPassword(newPassword), row.id]
+    );
+    res.json(mapStaff(updated.rows[0]));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -55,4 +55,12 @@ export const staffService = {
       body: JSON.stringify({ email, password }),
     });
   },
+
+  // Self-service: the signed-in person proves they know the current password.
+  changePassword(email: string, currentPassword: string, newPassword: string): Promise<AdminUser> {
+    return request<AdminUser>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, currentPassword, newPassword }),
+    });
+  },
 };

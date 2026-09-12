@@ -1257,20 +1257,6 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.CUSTOMER_LAST_ORDER_ID);
     this.notify('ORDERS_UPDATED');
   }
-
-  // --- RESYNC ---
-  // Throws away this device's cached copy of everything and reloads it from
-  // the database. Useful when a device looks out of step with the others.
-  public async resyncFromServer(): Promise<void> {
-    this.clearCachedData();
-    localStorage.setItem(STORAGE_KEYS.ORDER_SEQ, String(ORDER_ID_MIN));
-    this.notify('CAFE_UPDATED');
-    this.notify('TABLES_UPDATED');
-    this.notify('CATEGORIES_UPDATED');
-    this.notify('MENU_UPDATED');
-    this.notify('ORDERS_UPDATED');
-    await this.syncFromServer();
-  }
 }
 
 export const storageService = new StorageService();

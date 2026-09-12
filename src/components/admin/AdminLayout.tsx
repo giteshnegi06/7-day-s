@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CafeInfo, Category, MenuItem, Order, TableItem } from '../../types';
+import { AdminUser, CafeInfo, Category, MenuItem, Order, TableItem } from '../../types';
 import { AdminDashboard } from './AdminDashboard';
 import { AdminOrders } from './AdminOrders';
 import { AdminMenu } from './AdminMenu';
@@ -29,6 +29,7 @@ import {
 
 interface AdminLayoutProps {
   cafe: CafeInfo;
+  currentUser: AdminUser;
   orders: Order[];
   tables: TableItem[];
   categories: Category[];
@@ -63,6 +64,7 @@ type NavSection =
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({
   cafe,
+  currentUser,
   orders,
   tables,
   categories,
@@ -333,7 +335,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         {activeSection === 'staff' && <AdminStaff />}
 
         {activeSection === 'settings' && (
-          <AdminSettings cafe={cafe} onUpdateCafe={onUpdateCafe} />
+          <AdminSettings cafe={cafe} currentUser={currentUser} onUpdateCafe={onUpdateCafe} />
         )}
       </main>
 

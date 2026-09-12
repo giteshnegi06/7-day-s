@@ -7,7 +7,7 @@ export const swaggerDocument = {
       'Production-grade RESTful API backed by Neon Serverless PostgreSQL for real-time table QR code ordering, kitchen display system (KDS), menu management, and multi-round dining tickets.',
     contact: {
       name: "Cafe Support",
-      email: 'admin@negiskitchen.com',
+      email: 'support@example.com',
     },
   },
   servers: [

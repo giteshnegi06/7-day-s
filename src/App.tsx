@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CafeInfo, Category, MenuItem, Order, TableItem } from './types';
+import { AdminUser, CafeInfo, Category, MenuItem, Order, TableItem } from './types';
 import { storageService } from './services/storage';
 import { CustomerView } from './components/customer/CustomerView';
 import { KitchenView } from './components/kitchen/KitchenView';
@@ -48,9 +48,15 @@ export const App: React.FC = () => {
     return 'admin';
   });
 
-  // Admin authentication state
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return sessionStorage.getItem('cafe_admin_logged_in') === 'true';
+  // Admin authentication state. The signed-in account is kept for the session
+  // so the console knows whose password the Settings page is changing.
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('cafe_admin_user');
+      return raw ? (JSON.parse(raw) as AdminUser) : null;
+    } catch {
+      return null;
+    }
   });
 
   // Keep state synchronized with storageService events
@@ -101,19 +107,21 @@ export const App: React.FC = () => {
   };
 
   // Admin handlers
-  const handleAdminLogin = (email: string, role: 'admin' | 'kitchen') => {
-    if (role === 'kitchen') {
+  const handleAdminLogin = (account: AdminUser) => {
+    if (account.role !== 'admin') {
+      // Only two portals exist client-side; a 'staff' role account still
+      // lands in the Kitchen KDS rather than the full admin console.
       navigateToStaffView('kitchen');
     } else {
-      setIsAdminLoggedIn(true);
-      sessionStorage.setItem('cafe_admin_logged_in', 'true');
+      setAdminUser(account);
+      sessionStorage.setItem('cafe_admin_user', JSON.stringify(account));
       navigateToStaffView('admin');
     }
   };
 
   const handleAdminLogout = () => {
-    setIsAdminLoggedIn(false);
-    sessionStorage.removeItem('cafe_admin_logged_in');
+    setAdminUser(null);
+    sessionStorage.removeItem('cafe_admin_user');
   };
 
   // ─── CUSTOMER QR MENU ROUTE ───────────────────────────────────────────────
@@ -193,9 +201,10 @@ export const App: React.FC = () => {
         )}
 
         {staffView === 'admin' &&
-          (isAdminLoggedIn ? (
+          (adminUser ? (
             <AdminLayout
               cafe={cafe}
+              currentUser={adminUser}
               orders={orders}
               tables={tables}
               categories={categories}

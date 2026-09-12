@@ -45,7 +45,10 @@ export const AdminStaff: React.FC = () => {
     setLoadError(null);
     staffService
       .list()
-      .then(setStaff)
+      // Admin accounts are not managed from here: an admin changes their own
+      // password under Settings, and no other screen can reset or remove an
+      // admin login. This page is only for kitchen/staff accounts.
+      .then((accounts) => setStaff(accounts.filter((a) => a.role !== 'admin')))
       .catch((err) => setLoadError(err.message || 'Could not load staff accounts'))
       .finally(() => setIsLoading(false));
   };

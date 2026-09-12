@@ -1,24 +1,20 @@
 import React, { useState } from 'react';
-import { CafeInfo } from '../../types';
+import { AdminUser, CafeInfo } from '../../types';
 import { staffService } from '../../services/staff';
-import { Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
+import { Lock, Mail, Loader2 } from 'lucide-react';
 
 interface AdminLoginProps {
   cafe: CafeInfo;
-  onLoginSuccess: (email: string, role: 'admin' | 'kitchen') => void;
+  onLoginSuccess: (account: AdminUser) => void;
 }
 
-// The cafe owner's own instant demo access never needed a real account row —
-// any staff account created from the Staff Accounts screen, though, must
-// verify against the server so a removed/wrong password actually locks
-// someone out.
-const DEMO_ADMIN_EMAIL = 'admin@negiskitchen.com';
-const DEMO_ADMIN_PASSWORD = 'admin123';
-
+// Every sign-in is verified by the server against the admin_users table —
+// there is no built-in or demo account. Which portal the person lands in
+// (admin console vs kitchen display) is decided by the role stored on their
+// account, not by anything chosen on this screen.
 export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) => {
-  const [email, setEmail] = useState('admin@negiskitchen.com');
-  const [password, setPassword] = useState('admin123');
-  const [role, setRole] = useState<'admin' | 'kitchen'>('admin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -32,33 +28,15 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
       return;
     }
 
-    if (
-      role === 'admin' &&
-      trimmedEmail.toLowerCase() === DEMO_ADMIN_EMAIL &&
-      password === DEMO_ADMIN_PASSWORD
-    ) {
-      onLoginSuccess(trimmedEmail, 'admin');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const account = await staffService.login(trimmedEmail, password);
-      // Only two portals exist client-side; a 'staff' role account still
-      // lands in the Kitchen KDS rather than the full admin console.
-      onLoginSuccess(account.email, account.role === 'admin' ? 'admin' : 'kitchen');
+      onLoginSuccess(account);
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid email or password');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleQuickDemoAdmin = () => {
-    setEmail('admin@negiskitchen.com');
-    setPassword('admin123');
-    setRole('admin');
-    onLoginSuccess('admin@negiskitchen.com', 'admin');
   };
 
   return (
@@ -83,73 +61,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
             </div>
           )}
 
-          {/* Quick Demo Access banner */}
-          <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-amber-900 flex items-center gap-1">                Demo Credentials Available
-              </span>
-              <span className="text-[10px] uppercase font-bold text-amber-700 bg-amber-200/70 px-1.5 py-0.5 rounded">
-                Instant Access
-              </span>
-            </div>
-            <p className="text-[11px] text-amber-800 mb-2.5">
-              You can instantly sign in using pre-configured administrator access:
-            </p>
-            <button
-              type="button"
-              onClick={handleQuickDemoAdmin}
-              className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <span>One-Click Sign In as Cafe Admin</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-            <div>
-              <label className="block font-bold text-stone-700 uppercase tracking-wider mb-1">
-                Role
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRole('admin')}
-                  className={`py-2 px-3 rounded-xl font-bold border transition-colors ${
-                    role === 'admin'
-                      ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                      : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  Admin / Manager
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRole('kitchen');
-                    // The demo admin credentials are pre-filled by default and
-                    // won't match any real staff account — clear them so a
-                    // kitchen worker isn't confused by a guaranteed failure.
-                    if (email === DEMO_ADMIN_EMAIL && password === DEMO_ADMIN_PASSWORD) {
-                      setEmail('');
-                      setPassword('');
-                    }
-                  }}
-                  className={`py-2 px-3 rounded-xl font-bold border transition-colors ${
-                    role === 'kitchen'
-                      ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                      : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  Kitchen Staff
-                </button>
-              </div>
-              {role === 'kitchen' && (
-                <p className="text-[11px] text-stone-400 mt-1.5">
-                  Kitchen logins are created by the cafe admin under Staff Accounts.
-                </p>
-              )}
-            </div>
-
             <div>
               <label className="block font-bold text-stone-700 uppercase tracking-wider mb-1">
                 Email Address
@@ -159,6 +71,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
                 <input
                   type="email"
                   required
+                  autoComplete="username"
+                  autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500 font-medium"
@@ -175,6 +89,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
                 <input
                   type="password"
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500 font-medium"
@@ -188,14 +103,17 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
               className="w-full py-3 px-4 bg-stone-900 hover:bg-black disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
             >
               {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{isSubmitting ? 'Signing In...' : 'Sign In to Management'}</span>
+              <span>{isSubmitting ? 'Signing In...' : 'Sign In'}</span>
             </button>
           </form>
 
-          <div className="text-center">
-            <span className="text-[11px] text-stone-400">
+          <div className="text-center space-y-1">
+            <p className="text-[11px] text-stone-400">
+              Staff accounts are created by the cafe admin under Staff Accounts.
+            </p>
+            <p className="text-[11px] text-stone-400">
               Customers scanning table QR codes do not require login.
-            </span>
+            </p>
           </div>
         </div>
       </div>
