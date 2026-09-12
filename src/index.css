@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* iOS Safari auto-zooms the page when a focused input's font-size is under
+   16px — nearly every form field here uses a smaller Tailwind text size for
+   density, so force 16px only while actually focused on a touch/mobile
+   viewport (keeps the compact look everywhere else, and on desktop). */
+@media (max-width: 767px) {
+  input:focus,
+  select:focus,
+  textarea:focus {
+    font-size: 16px !important;
+  }
+}
+
+/* Printing (Print Bill / Table Stand / Order Receipt) goes through
+   react-to-print, which clones only the targeted receipt element into an
+   isolated iframe and prints that — so there's no surrounding page chrome
+   to hide here. This just tidies up whatever ends up inside that clone:
+   any leftover interactive buttons disappear, and the receipt sits in
+   normal flow instead of being forced into `position: absolute` (which
+   previously collapsed the printed page to blank, since an iframe's body
+   sizes to its normal-flow content). */
+@media print {
+  .no-print,
+  button {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #printable-single-bill,
+  #printable-table-card,
+  #printable-order-receipt {
+    max-width: 420px;
+    margin: 0 auto;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 12px !important;
+  }
+}
