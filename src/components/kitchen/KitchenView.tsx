@@ -4,6 +4,7 @@ import { storageService } from '../../services/storage';
 import { useTodayStart } from '../../hooks/useTodayStart';
 import { soundService } from '../../services/sound';
 import { KitchenOrderCard } from './KitchenOrderCard';
+import { ServiceRequestsPanel } from '../common/ServiceRequestsPanel';
 import {
   ChefHat,
   Volume2,
@@ -267,7 +268,11 @@ export const KitchenView: React.FC<KitchenViewProps> = () => {
       )}
 
       {/* Orders Grid */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Tables asking for water / a server — sits above the tickets so it's
+            impossible to miss while the queue is being worked. */}
+        <ServiceRequestsPanel theme="dark" />
+
         {filteredOrders.length === 0 ? (
           <div className="py-24 text-center">
             <div className="w-16 h-16 rounded-2xl bg-stone-800 text-stone-600 flex items-center justify-center mx-auto mb-3">

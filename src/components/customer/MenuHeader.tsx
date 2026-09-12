@@ -2,6 +2,7 @@ import React from 'react';
 import { CafeInfo, TableItem } from '../../types';
 import { Search, MapPin, Sparkles } from 'lucide-react';
 import { VegBadge } from '../common/VegBadge';
+import { CallServerButton } from './CallServerButton';
 
 interface MenuHeaderProps {
   cafe: CafeInfo;
@@ -94,6 +95,9 @@ export const MenuHeader: React.FC<MenuHeaderProps> = ({
           <VegBadge type="veg" size="sm" />
           <span>Veg Only</span>
         </button>
+
+        {/* Call Server — always reachable from the menu, even before ordering */}
+        <CallServerButton table={table} />
       </div>
     </div>
   );

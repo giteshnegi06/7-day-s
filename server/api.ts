@@ -97,6 +97,19 @@ function mapTable(row: any) {
   };
 }
 
+// Helper to map DB service_requests row
+function mapServiceRequest(row: any) {
+  return {
+    id: row.id,
+    tableId: row.table_id,
+    tableNumber: row.table_number,
+    type: row.request_type,
+    status: row.status,
+    createdAt: new Date(row.created_at).getTime(),
+    resolvedAt: row.resolved_at ? new Date(row.resolved_at).getTime() : null,
+  };
+}
+
 // Helper to map DB category
 function mapCategory(row: any) {
   return {
@@ -403,6 +416,74 @@ apiRouter.post('/auth/change-password', async (req: Request, res: Response) => {
       [hashPassword(newPassword), row.id]
     );
     res.json(mapStaff(updated.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- SERVICE REQUESTS ("Need Water" / "Call Server") ---
+// Raised by a customer from the order-tracking screen; staff see them on the
+// Kitchen display and Admin dashboard until they mark them done.
+const SERVICE_REQUEST_TYPES = new Set(['water', 'server']);
+
+apiRouter.get('/service-requests', async (_req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT * FROM service_requests WHERE status = 'pending' ORDER BY created_at ASC`
+    );
+    res.json(result.rows.map(mapServiceRequest));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/service-requests', async (req: Request, res: Response) => {
+  try {
+    const { tableId, tableNumber, type } = req.body || {};
+    if (!tableId || !tableNumber || !SERVICE_REQUEST_TYPES.has(type)) {
+      return res.status(400).json({ error: 'tableId, tableNumber and a valid type are required' });
+    }
+    const cafeId = await getCafeId();
+
+    // A table tapping the same button twice shouldn't page the staff twice.
+    // While one request of that kind is still open, hand it back unchanged.
+    const existing = await query(
+      `SELECT * FROM service_requests
+       WHERE cafe_id = $1 AND table_id = $2 AND request_type = $3 AND status = 'pending'
+       LIMIT 1`,
+      [cafeId, tableId, type]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({ ...mapServiceRequest(existing.rows[0]), duplicate: true });
+    }
+
+    const id = `sr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const result = await query(
+      `INSERT INTO service_requests (id, cafe_id, table_id, table_number, request_type)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [id, cafeId, tableId, tableNumber, type]
+    );
+    notifyResourceChanged('service_requests');
+    res.status(201).json(mapServiceRequest(result.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.patch('/service-requests/:id/resolve', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `UPDATE service_requests SET status = 'resolved', resolved_at = now()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Request not found or already resolved' });
+    }
+    notifyResourceChanged('service_requests');
+    res.json(mapServiceRequest(result.rows[0]));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

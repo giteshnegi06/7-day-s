@@ -64,6 +64,7 @@ type EventType =
   | 'CATEGORIES_UPDATED'
   | 'TABLES_UPDATED'
   | 'CAFE_UPDATED'
+  | 'SERVICE_REQUESTS_UPDATED'
   | 'NEW_ORDER';
 
 type Listener = (type: EventType, payload?: unknown) => void;
@@ -154,6 +155,9 @@ class StorageService {
       this.refreshMenuData();
     } else if (resource === 'cafe') {
       this.refreshCafe();
+    } else if (resource === 'service_requests') {
+      // Not cached here — the hook in services/serviceRequests.ts refetches.
+      this.notifyLocal('SERVICE_REQUESTS_UPDATED');
     }
   }
 

@@ -122,6 +122,20 @@ export interface Order {
   rounds?: OrderRound[];
 }
 
+export type ServiceRequestType = 'water' | 'server';
+
+// A table asking for help from the order-tracking screen. Lives only on the
+// server; staff screens poll/subscribe for the pending ones.
+export interface ServiceRequest {
+  id: string;
+  tableId: string;
+  tableNumber: string;
+  type: ServiceRequestType;
+  status: 'pending' | 'resolved';
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
 export interface AdminUser {
   id: string;
   name: string;
