@@ -1,5 +1,5 @@
 import { CafeInfo, Category, MenuItem, Order, OrderRound, OrderStatus, TableItem } from '../types';
-import { INITIAL_CAFE, INITIAL_CATEGORIES, INITIAL_MENU_ITEMS, INITIAL_SAMPLE_ORDERS, INITIAL_TABLES } from '../data/initialData';
+import { INITIAL_CAFE } from '../data/initialData';
 import { soundService } from './sound';
 import { isRealtimeEnabled, subscribeToResourceChanges, RealtimeResource } from './realtime';
 
@@ -15,7 +15,15 @@ const STORAGE_KEYS = {
   CUSTOMER_ORDER_IDS: 'negis_kitchen_customer_order_ids',
   ADMIN_AUTH: 'negis_kitchen_admin_auth',
   SYNCED_ORDER_IDS: 'negis_kitchen_synced_order_ids',
+  CACHE_VERSION: 'negis_kitchen_cache_version',
 };
+
+// Bump this whenever the shape or origin of the cached data changes in a way
+// that makes older localStorage contents untrustworthy. Earlier builds seeded
+// demo tables/menu/orders straight into localStorage; a cache from one of
+// those must be thrown away rather than re-synced (or, worse, re-POSTed) to
+// the database, which is now the only source of truth for all of it.
+const CACHE_VERSION = 'db-v1';
 
 // Kitchen backlog rule: while more than this many orders are still waiting to
 // be cooked, the kitchen is behind, and every order past that point inherits
@@ -215,25 +223,23 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(cafe));
         this.notifyLocal('CAFE_UPDATED', cafe);
       }
-      if (tables && tables.length > 0) {
+      // A null here means the request failed (apiFetch swallows errors), so
+      // the cached copy stays. An empty array is a real answer — the database
+      // has none — and replaces whatever was cached.
+      if (tables) {
         localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(tables));
         this.notifyLocal('TABLES_UPDATED', tables);
       }
-      if (categories && categories.length > 0) {
+      if (categories) {
         localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
         this.notifyLocal('CATEGORIES_UPDATED', categories);
       }
-      if (menuItems && menuItems.length > 0) {
+      if (menuItems) {
         localStorage.setItem(STORAGE_KEYS.MENU_ITEMS, JSON.stringify(menuItems));
         this.notifyLocal('MENU_UPDATED', menuItems);
       }
-      // Same guard as the poll: an empty list means "nothing seeded yet" or a
-      // half-up database, not "every order was deleted" — never let it wipe
-      // orders that are still only stored locally.
-      if (orders && orders.length > 0) {
-        this.rememberSyncedOrderIds(orders.map((o) => o.id));
-        localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-        this.notifyLocal('ORDERS_UPDATED', orders);
+      if (orders) {
+        this.mergeServerOrders(orders);
       }
     } catch {
       // offline fallback
@@ -248,72 +254,11 @@ class StorageService {
         this.apiFetch<TableItem[]>('/tables'),
       ]);
 
-      if (serverOrders && serverOrders.length > 0) {
-        const currentOrders = this.getOrders();
-        const currentIds = new Set(currentOrders.map((o) => o.id));
-        const hasNew = serverOrders.some((o) => !currentIds.has(o.id));
-
-        // Merge server orders with local orders: preserve any locally-created
-        // orders that haven't been persisted to the server yet.
-        const serverIds = new Set(serverOrders.map((o) => o.id));
-        this.rememberSyncedOrderIds(serverOrders.map((o) => o.id));
-        const syncedBefore = this.getSyncedOrderIds();
-
-        // An order the server has never acknowledged is one whose POST may have
-        // been lost — worth re-sending. An order the server acknowledged once
-        // and no longer returns was deleted on purpose, so re-sending it would
-        // resurrect it on every poll forever; drop our copy instead.
-        const localOnly = currentOrders.filter((o) => !serverIds.has(o.id));
-        const deletedRemotely = localOnly.filter((o) => syncedBefore.has(o.id));
-        const neverSynced = localOnly.filter((o) => !syncedBefore.has(o.id));
-
-        // Server orders with rounds=[] should inherit status from local copy
-        // to avoid the auto-serve race condition.
-        const mergedOrders = serverOrders.map((serverOrder) => {
-          const localCopy = currentOrders.find((lo) => lo.id === serverOrder.id);
-          if (localCopy && (!serverOrder.rounds || serverOrder.rounds.length === 0) && localCopy.rounds && localCopy.rounds.length > 0) {
-            // Server hasn't returned round data yet — keep local copy intact
-            return localCopy;
-          }
-          return serverOrder;
-        });
-
-        const merged = [...mergedOrders, ...neverSynced];
-        const isDifferent = JSON.stringify(merged) !== JSON.stringify(currentOrders);
-
-        if (isDifferent) {
-          localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(merged));
-          if (hasNew) {
-            const newest = serverOrders[0];
-            this.notify('NEW_ORDER', newest);
-          }
-          this.notify('ORDERS_UPDATED', merged);
-        }
-
-        // A "local-only" order usually just means its own createOrder() POST
-        // hasn't resolved yet — give that a moment. But if the POST genuinely
-        // failed (network blip, server briefly down) it would otherwise sit
-        // here forever as a phantom duplicate, since nothing else retries it.
-        // Re-POST it, reusing the same id, so it can never end up as two
-        // separate records.
-        const now = Date.now();
-        for (const order of neverSynced) {
-          if (now - order.createdAt > ORDER_SYNC_GRACE_MS) {
-            this.retrySyncOrder(order);
-          }
-        }
-
-        if (deletedRemotely.length > 0) {
-          console.info(
-            '[storage] dropping locally-held orders deleted on the server:',
-            deletedRemotely.map((o) => o.id).join(', ')
-          );
-        }
+      if (serverOrders) {
+        this.mergeServerOrders(serverOrders);
       }
-      // If server returns empty array, do NOT overwrite local orders —
-      // the DB may not be seeded yet or could be temporarily unavailable.
 
-      if (tables && tables.length > 0) {
+      if (tables) {
         const currentTables = this.getTables();
         if (JSON.stringify(tables) !== JSON.stringify(currentTables)) {
           localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(tables));
@@ -322,6 +267,72 @@ class StorageService {
       }
     } catch {
       // ignore
+    }
+  }
+
+  // Reconciles the server's order list (the source of truth) with the cached
+  // copy. The only local state that survives is an order this device created
+  // whose POST the server has not acknowledged yet — it is kept and re-sent.
+  private mergeServerOrders(serverOrders: Order[]): void {
+    const currentOrders = this.getOrders();
+    const currentIds = new Set(currentOrders.map((o) => o.id));
+    const hasNew = serverOrders.some((o) => !currentIds.has(o.id));
+
+    // Merge server orders with local orders: preserve any locally-created
+    // orders that haven't been persisted to the server yet.
+    const serverIds = new Set(serverOrders.map((o) => o.id));
+    this.rememberSyncedOrderIds(serverOrders.map((o) => o.id));
+    const syncedBefore = this.getSyncedOrderIds();
+
+    // An order the server has never acknowledged is one whose POST may have
+    // been lost — worth re-sending. An order the server acknowledged once
+    // and no longer returns was deleted on purpose, so re-sending it would
+    // resurrect it on every poll forever; drop our copy instead.
+    const localOnly = currentOrders.filter((o) => !serverIds.has(o.id));
+    const deletedRemotely = localOnly.filter((o) => syncedBefore.has(o.id));
+    const neverSynced = localOnly.filter((o) => !syncedBefore.has(o.id));
+
+    // Server orders with rounds=[] should inherit status from local copy
+    // to avoid the auto-serve race condition.
+    const mergedOrders = serverOrders.map((serverOrder) => {
+      const localCopy = currentOrders.find((lo) => lo.id === serverOrder.id);
+      if (localCopy && (!serverOrder.rounds || serverOrder.rounds.length === 0) && localCopy.rounds && localCopy.rounds.length > 0) {
+        // Server hasn't returned round data yet — keep local copy intact
+        return localCopy;
+      }
+      return serverOrder;
+    });
+
+    const merged = [...mergedOrders, ...neverSynced];
+    const isDifferent = JSON.stringify(merged) !== JSON.stringify(currentOrders);
+
+    if (isDifferent) {
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(merged));
+      if (hasNew && serverOrders.length > 0) {
+        const newest = serverOrders[0];
+        this.notify('NEW_ORDER', newest);
+      }
+      this.notify('ORDERS_UPDATED', merged);
+    }
+
+    // A "local-only" order usually just means its own createOrder() POST
+    // hasn't resolved yet — give that a moment. But if the POST genuinely
+    // failed (network blip, server briefly down) it would otherwise sit
+    // here forever as a phantom duplicate, since nothing else retries it.
+    // Re-POST it, reusing the same id, so it can never end up as two
+    // separate records.
+    const now = Date.now();
+    for (const order of neverSynced) {
+      if (now - order.createdAt > ORDER_SYNC_GRACE_MS) {
+        this.retrySyncOrder(order);
+      }
+    }
+
+    if (deletedRemotely.length > 0) {
+      console.info(
+        '[storage] dropping locally-held orders deleted on the server:',
+        deletedRemotely.map((o) => o.id).join(', ')
+      );
     }
   }
 
@@ -400,27 +411,33 @@ class StorageService {
     }
   }
 
+  // localStorage is purely a cache of what the server last sent (so the UI
+  // can paint instantly and survive a flaky connection). Nothing is seeded
+  // here: every table, category, menu item and order comes from the database
+  // via syncFromServer() and the polls/pushes that follow.
   private initStorage() {
     if (typeof window === 'undefined') return;
 
-    if (!localStorage.getItem(STORAGE_KEYS.CAFE)) {
-      localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(INITIAL_CAFE));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.TABLES)) {
-      localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(INITIAL_TABLES));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.CATEGORIES)) {
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.MENU_ITEMS)) {
-      localStorage.setItem(STORAGE_KEYS.MENU_ITEMS, JSON.stringify(INITIAL_MENU_ITEMS));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.ORDERS)) {
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(INITIAL_SAMPLE_ORDERS));
+    if (localStorage.getItem(STORAGE_KEYS.CACHE_VERSION) !== CACHE_VERSION) {
+      this.clearCachedData();
+      localStorage.setItem(STORAGE_KEYS.CACHE_VERSION, CACHE_VERSION);
     }
     if (!localStorage.getItem(STORAGE_KEYS.ORDER_SEQ)) {
       localStorage.setItem(STORAGE_KEYS.ORDER_SEQ, String(ORDER_ID_MIN));
     }
+  }
+
+  // Drops every cached copy of server-owned data. The next sync repopulates
+  // it from the database.
+  private clearCachedData(): void {
+    localStorage.removeItem(STORAGE_KEYS.CAFE);
+    localStorage.removeItem(STORAGE_KEYS.TABLES);
+    localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
+    localStorage.removeItem(STORAGE_KEYS.MENU_ITEMS);
+    localStorage.removeItem(STORAGE_KEYS.ORDERS);
+    localStorage.removeItem(STORAGE_KEYS.SYNCED_ORDER_IDS);
+    localStorage.removeItem(STORAGE_KEYS.CUSTOMER_ORDER_IDS);
+    localStorage.removeItem(STORAGE_KEYS.CUSTOMER_LAST_ORDER_ID);
   }
 
   public subscribe(listener: Listener): () => void {
@@ -480,9 +497,9 @@ class StorageService {
   public getTables(): TableItem[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TABLES);
-      return data ? JSON.parse(data) : INITIAL_TABLES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_TABLES;
+      return [];
     }
   }
 
@@ -530,9 +547,9 @@ class StorageService {
   public getCategories(): Category[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-      return data ? JSON.parse(data) : INITIAL_CATEGORIES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_CATEGORIES;
+      return [];
     }
   }
 
@@ -582,9 +599,9 @@ class StorageService {
   public getMenuItems(): MenuItem[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.MENU_ITEMS);
-      return data ? JSON.parse(data) : INITIAL_MENU_ITEMS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_MENU_ITEMS;
+      return [];
     }
   }
 
@@ -640,9 +657,9 @@ class StorageService {
   public getOrders(): Order[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      return data ? JSON.parse(data) : INITIAL_SAMPLE_ORDERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_SAMPLE_ORDERS;
+      return [];
     }
   }
 
@@ -1241,23 +1258,18 @@ class StorageService {
     this.notify('ORDERS_UPDATED');
   }
 
-  // --- RESET DEMO ---
-  public resetToDemo(): void {
-    localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(INITIAL_CAFE));
-    // Cafe identity lives in the database, so pull it straight back after
-    // clearing the local cache instead of leaving the placeholder on screen.
-    this.refreshCafe();
-    localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(INITIAL_TABLES));
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
-    localStorage.setItem(STORAGE_KEYS.MENU_ITEMS, JSON.stringify(INITIAL_MENU_ITEMS));
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(INITIAL_SAMPLE_ORDERS));
+  // --- RESYNC ---
+  // Throws away this device's cached copy of everything and reloads it from
+  // the database. Useful when a device looks out of step with the others.
+  public async resyncFromServer(): Promise<void> {
+    this.clearCachedData();
     localStorage.setItem(STORAGE_KEYS.ORDER_SEQ, String(ORDER_ID_MIN));
-    localStorage.removeItem(STORAGE_KEYS.CUSTOMER_ORDER_IDS);
-    localStorage.removeItem(STORAGE_KEYS.CUSTOMER_LAST_ORDER_ID);
     this.notify('CAFE_UPDATED');
     this.notify('TABLES_UPDATED');
+    this.notify('CATEGORIES_UPDATED');
     this.notify('MENU_UPDATED');
     this.notify('ORDERS_UPDATED');
+    await this.syncFromServer();
   }
 }
 

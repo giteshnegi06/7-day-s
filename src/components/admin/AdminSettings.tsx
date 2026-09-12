@@ -52,15 +52,17 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, onUpdateCafe
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
-  const handleReset = () => {
+  // Everything the app shows lives in the database; this device only keeps a
+  // cache of it. Resync throws that cache away and reloads from the server.
+  const handleReset = async () => {
     if (
       window.confirm(
-        'Reset all cafe data, tables, menu, and sample orders to initial demo state? This will reset local storage.'
+        "Clear this device's cached data and reload the cafe, tables, menu and orders from the database?"
       )
     ) {
-      storageService.resetToDemo();
+      await storageService.resyncFromServer();
       setFormData(storageService.getCafe());
-      alert('Demo data restored successfully.');
+      alert('Data reloaded from the database.');
     }
   };
 
@@ -257,7 +259,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, onUpdateCafe
             className="px-4 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset to Demo Data</span>
+            <span>Resync from Database</span>
           </button>
 
           <button
