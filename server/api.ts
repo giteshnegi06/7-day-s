@@ -374,18 +374,26 @@ apiRouter.patch('/admin-users/:id/password', async (req: Request, res: Response)
 // Verifies a staff login against admin_users. This is the only way into the
 // staff portal — there is no built-in or demo account, so every sign-in must
 // match a real account row and its password.
+// Sign-in and password flows answer expected failures (wrong password, bad
+// token, mail not set up) with 200 + { ok: false, error } instead of a 4xx.
+// The browser logs every non-2xx fetch as a console error, so a mistyped
+// password would otherwise litter the console; the client checks `ok`.
+function authFail(res: Response, payload: { error: string }) {
+  return res.status(200).json({ ok: false, ...payload });
+}
+
 apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) {
-      return res.status(400).json({ error: 'Missing email or password' });
+      return authFail(res, { error: 'Missing email or password' });
     }
     const result = await query('SELECT * FROM admin_users WHERE email = $1', [
       String(email).toLowerCase().trim(),
     ]);
     const row = result.rows[0];
     if (!row || !row.password_hash || !verifyPassword(password, row.password_hash)) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return authFail(res, { error: 'Invalid email or password' });
     }
     res.json(mapStaff(row));
   } catch (err: any) {
@@ -400,17 +408,17 @@ apiRouter.post('/auth/change-password', async (req: Request, res: Response) => {
   try {
     const { email, currentPassword, newPassword } = req.body || {};
     if (!email || !currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Missing email, current password or new password' });
+      return authFail(res, { error: 'Missing email, current password or new password' });
     }
     if (String(newPassword).length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      return authFail(res, { error: 'New password must be at least 6 characters' });
     }
     const result = await query('SELECT * FROM admin_users WHERE email = $1', [
       String(email).toLowerCase().trim(),
     ]);
     const row = result.rows[0];
     if (!row || !row.password_hash || !verifyPassword(currentPassword, row.password_hash)) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
+      return authFail(res, { error: 'Current password is incorrect' });
     }
     const updated = await query(
       'UPDATE admin_users SET password_hash = $1 WHERE id = $2 RETURNING *',
@@ -441,9 +449,9 @@ function appBaseUrl(req: Request): string {
 apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
   try {
     const { email } = req.body || {};
-    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!email) return authFail(res, { error: 'Missing email' });
     if (!isMailConfigured()) {
-      return res.status(503).json({
+      return authFail(res, {
         error: 'Password reset email is not set up for this cafe. Ask whoever hosts the app to configure SMTP_USER / SMTP_PASS.',
       });
     }
@@ -476,7 +484,7 @@ apiRouter.post('/auth/forgot-password', async (req: Request, res: Response) => {
       });
     } catch (mailErr: any) {
       console.error('[POST /auth/forgot-password] Email send failed:', mailErr.message);
-      return res.status(502).json({ error: 'Could not send the reset email right now. Please try again in a minute.' });
+      return authFail(res, { error: 'Could not send the reset email right now. Please try again in a minute.' });
     }
     res.json(genericOk);
   } catch (err: any) {
@@ -490,10 +498,10 @@ apiRouter.post('/auth/reset-password', async (req: Request, res: Response) => {
   try {
     const { token, newPassword } = req.body || {};
     if (!token || !newPassword) {
-      return res.status(400).json({ error: 'Missing token or new password' });
+      return authFail(res, { error: 'Missing token or new password' });
     }
     if (String(newPassword).length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      return authFail(res, { error: 'New password must be at least 6 characters' });
     }
     const found = await query(
       `SELECT r.token_hash, r.user_id, r.expires_at, r.used_at, u.email
@@ -503,7 +511,7 @@ apiRouter.post('/auth/reset-password', async (req: Request, res: Response) => {
     );
     const row = found.rows[0];
     if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
-      return res.status(400).json({
+      return authFail(res, {
         error: 'This reset link is invalid or has expired. Request a new one from the login page.',
       });
     }

@@ -339,7 +339,7 @@ Note: ${unserved} round${unserved > 1 ? 's are' : ' is'} still with the kitchen 
       {/* Search and Filters Bar */}
       <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         {/* Search */}
-        <div className="relative flex-1 min-w-[240px]">
+        <div className="relative flex-1 min-w-60">
           <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -660,7 +660,7 @@ Note: ${unserved} round${unserved > 1 ? 's are' : ' is'} still with the kitchen 
                                         key={idx}
                                         className="flex items-center justify-between text-xs text-stone-700"
                                       >
-                                        <div className="flex items-center gap-1.5 truncate max-w-[200px]">
+                                        <div className="flex items-center gap-1.5 truncate max-w-50">
                                           <VegBadge type={it.vegType} size="sm" />
                                           <span className="font-medium truncate">
                                             {it.quantity}x {it.name}
