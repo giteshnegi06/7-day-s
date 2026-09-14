@@ -3,7 +3,7 @@ import { CafeInfo, MenuItem, Order, TableItem } from '../../types';
 import { MonthRevenueModal } from './MonthRevenueModal';
 import { ServiceRequestsPanel } from '../common/ServiceRequestsPanel';
 import {
-  DollarSign,
+  IndianRupee,
   ShoppingBag,
   Clock,
   CheckCircle2,
@@ -198,7 +198,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center justify-between text-stone-400 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-stone-500">Today's Sales</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
+              <IndianRupee className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-black text-stone-900">

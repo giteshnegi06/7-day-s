@@ -22,7 +22,7 @@
   }
 }
 
-/* Printing (Print Bill / Table Stand / Order Receipt) goes through
+/* Printing (Bill / Table Stand / Order Receipt) goes through
    react-to-print, which clones only the targeted receipt element into an
    isolated iframe and prints that — so there's no surrounding page chrome
    to hide here. This just tidies up whatever ends up inside that clone:

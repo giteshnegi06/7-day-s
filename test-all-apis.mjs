@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
  * Comprehensive API test script - tests all major endpoints against both
- * localhost dev server and Vercel deployment.
- * 
+ * local backend server and its Vercel deployment. The backend now lives in
+ * ./backend and is deployed separately from the frontend.
+ *
  * Usage:
- *   node test-all-apis.mjs                    # Test localhost:3000
+ *   node test-all-apis.mjs                    # Test localhost:3001 (cd backend && npm run dev)
  *   node test-all-apis.mjs --vercel          # Test vercel deployment
  */
 
-const LOCALHOST = 'http://localhost:3000';
-const VERCEL = 'https://qr-ordering-sable.vercel.app';
+const LOCALHOST = 'http://localhost:3001';
+const VERCEL = 'https://cafe-backend-sigma-pearl.vercel.app';
 const BASE_URL = process.argv.includes('--vercel') ? VERCEL : LOCALHOST;
 
 console.log(`🧪 Testing API endpoints at: ${BASE_URL}`);

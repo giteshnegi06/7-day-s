@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 .neon
+
+# The backend now lives in its own git repo, deployed separately.
+cafeBackend/
