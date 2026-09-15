@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CafeInfo } from '../../types';
 import { staffService } from '../../services/staff';
-import { Lock, KeyRound, Loader2, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, KeyRound, Loader2, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 interface ResetPasswordViewProps {
   cafe: CafeInfo;
@@ -18,6 +18,8 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ cafe, toke
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [doneEmail, setDoneEmail] = useState<string | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,15 +90,23 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ cafe, toke
                 <div className="relative">
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showNewPassword ? 'text' : 'password'}
                     required
                     autoFocus
                     autoComplete="new-password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="At least 6 characters"
-                    className={inputClass}
+                    className={`${inputClass} pr-9`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((v) => !v)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -107,13 +117,21 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ cafe, toke
                 <div className="relative">
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showConfirmPassword ? 'text' : 'password'}
                     required
                     autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className={inputClass}
+                    className={`${inputClass} pr-9`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

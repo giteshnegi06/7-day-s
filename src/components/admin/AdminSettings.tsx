@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { AdminUser, CafeInfo } from '../../types';
-import { Save, ShieldCheck, Store, Percent, Phone, MapPin, Sparkles, Image as ImageIcon, Upload, KeyRound, Lock, Loader2 } from 'lucide-react';
+import { Save, ShieldCheck, Store, Percent, Phone, MapPin, Sparkles, Image as ImageIcon, Upload, KeyRound, Lock, Loader2, Eye, EyeOff } from 'lucide-react';
 import { staffService } from '../../services/staff';
 
 // Keep uploaded cafe images reasonably small — they're fetched on every
@@ -29,6 +29,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, currentUser,
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -335,12 +338,20 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, currentUser,
             <div className="relative">
               <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="password"
+                type={showCurrentPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+                className="w-full pl-9 pr-9 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
               />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword((v) => !v)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
           <div>
@@ -350,13 +361,21 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, currentUser,
             <div className="relative">
               <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="password"
+                type={showNewPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="At least 6 characters"
-                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+                className="w-full pl-9 pr-9 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
               />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword((v) => !v)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
           <div>
@@ -366,12 +385,20 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ cafe, currentUser,
             <div className="relative">
               <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="password"
+                type={showConfirmPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
+                className="w-full pl-9 pr-9 py-2.5 border border-stone-200 rounded-xl focus:outline-none focus:border-amber-500"
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
         </div>

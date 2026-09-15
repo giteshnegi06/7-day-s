@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AdminUser, CafeInfo } from '../../types';
 import { staffService } from '../../services/staff';
-import { Lock, Mail, Loader2, KeyRound, ArrowLeft, MailCheck } from 'lucide-react';
+import { Lock, Mail, Loader2, KeyRound, ArrowLeft, MailCheck, Eye, EyeOff } from 'lucide-react';
 
 interface AdminLoginProps {
   cafe: CafeInfo;
@@ -21,12 +21,14 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
   // "Forgot password?" — the server emails a one-time link to the account's
   // address; the link opens /reset-password where the new password is set.
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const switchMode = (next: 'login' | 'forgot') => {
     setMode(next);
     setErrorMsg(null);
     setPassword('');
     setSentTo(null);
+    setShowPassword(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -136,13 +138,21 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
                 <div className="relative">
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={inputClass}
+                    className={`${inputClass} pr-9`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
