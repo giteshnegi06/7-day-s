@@ -131,7 +131,7 @@ export const staffService = {
   forgotPassword(email: string): Promise<{ ok: true; message: string }> {
     return request<{ ok: true; message: string }>('/auth/forgot-password', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ cafeId: CAFE_ID, email }),
     });
   },
 
