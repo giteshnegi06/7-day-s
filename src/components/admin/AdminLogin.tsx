@@ -41,7 +41,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ cafe, onLoginSuccess }) 
 
     setIsSubmitting(true);
     try {
-      const account = await staffService.login(trimmedEmail, password);
+      const account = await staffService.login(cafe.id, trimmedEmail, password);
       onLoginSuccess(account);
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid email or password');

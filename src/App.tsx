@@ -7,6 +7,7 @@ import { AdminLayout } from './components/admin/AdminLayout';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { ResetPasswordView } from './components/admin/ResetPasswordView';
 import { soundService } from './services/sound';
+import { clearAuthToken } from './services/staff';
 import {
   ChefHat,
   Store,
@@ -171,6 +172,7 @@ export const App: React.FC = () => {
   const handleStaffLogout = () => {
     setStaffUser(null);
     sessionStorage.removeItem('cafe_staff_user');
+    clearAuthToken();
     setStaffView('admin');
     setUrl(LOGIN_ROUTE);
   };

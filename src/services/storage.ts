@@ -2,6 +2,7 @@ import { CafeInfo, Category, MenuItem, Order, OrderRound, OrderStatus, TableItem
 import { INITIAL_CAFE } from '../data/initialData';
 import { soundService } from './sound';
 import { isRealtimeEnabled, subscribeToResourceChanges, RealtimeResource } from './realtime';
+import { getAuthToken, clearAuthToken } from './staff';
 
 const STORAGE_KEYS = {
   CAFE: 'negis_kitchen_info',
@@ -100,6 +101,13 @@ class StorageService {
   // instead of hammering the server on every single poll tick.
   private orderSyncAttempts: Map<string, { attempts: number; lastAttemptAt: number }> = new Map();
 
+  // The Pusher channel is cafe-scoped, but the cafe's id may not be known yet
+  // at construction time (a fresh device has nothing cached and hasn't heard
+  // back from /cafe). These track the channel actually subscribed to, so it
+  // can be (re)established once the real id shows up.
+  private realtimeCafeId: string | null = null;
+  private realtimeUnsubscribe: (() => void) | null = null;
+
   constructor() {
     this.initStorage();
 
@@ -135,17 +143,31 @@ class StorageService {
       // explicitly adds more time or marks it ready themselves; nothing
       // here silently auto-completes it on their behalf.
 
+      // Live updates pushed via Pusher when another device changes data. Uses
+      // whatever cafe id is already cached; syncFromServer()/refreshCafe()
+      // re-subscribe once the real one comes back from /cafe.
+      this.ensureRealtimeSubscribed(this.getCafe().id);
+
       // Initial cloud sync from Neon database
       this.syncFromServer();
-
-      // Live updates pushed via Pusher when another device changes data.
-      subscribeToResourceChanges((resource) => this.handleResourceChanged(resource));
 
       // Safety-net poll in case a push is missed (or Pusher isn't configured,
       // in which case this is the only sync mechanism and runs frequently).
       const pollIntervalMs = isRealtimeEnabled() ? 20000 : 3000;
       setInterval(() => this.pollOrdersAndTables(), pollIntervalMs);
     }
+  }
+
+  // (Re)subscribes to this cafe's Pusher channel if it isn't already the one
+  // in use. A no-op once subscribed to the given id, and a no-op while the id
+  // is still unknown (empty).
+  private ensureRealtimeSubscribed(cafeId: string): void {
+    if (!cafeId || cafeId === this.realtimeCafeId) return;
+    if (this.realtimeUnsubscribe) this.realtimeUnsubscribe();
+    this.realtimeCafeId = cafeId;
+    this.realtimeUnsubscribe = subscribeToResourceChanges(cafeId, (resource) =>
+      this.handleResourceChanged(resource)
+    );
   }
 
   private handleResourceChanged(resource: RealtimeResource): void {
@@ -187,6 +209,7 @@ class StorageService {
       const cafe = await this.apiFetch<CafeInfo>('/cafe');
       if (cafe) {
         localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(cafe));
+        this.ensureRealtimeSubscribed(cafe.id);
         this.notify('CAFE_UPDATED', cafe);
       }
     } catch {
@@ -194,17 +217,35 @@ class StorageService {
     }
   }
 
-  private async apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
+  // `auth: true` attaches the signed-in staff member's session token — only
+  // needed for staff/admin-only mutations (cafe settings, table/menu/category
+  // CRUD, order status, revenue). Customer-facing calls (menu viewing,
+  // placing an order, service requests) must stay public and never pass it.
+  private async apiFetch<T>(
+    endpoint: string,
+    options?: RequestInit & { auth?: boolean }
+  ): Promise<T | null> {
     if (typeof window === 'undefined') return null;
     // VITE_API_URL lets you point the frontend at a different backend origin.
     // In production (Vercel), both frontend and API share the same origin.
     // In local dev, you can point to Vercel's API if local DB connection fails.
     const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
+    const { auth, headers, ...rest } = options || {};
+    const token = auth ? getAuthToken() : null;
     try {
       const res = await fetch(`${apiBase}${endpoint}`, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
+        ...rest,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(headers || {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
+      if (res.status === 401 && auth) {
+        // Stale/expired/missing session token — same treatment as invalid
+        // credentials. Dropped so nothing keeps retrying with it.
+        clearAuthToken();
+      }
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -225,6 +266,7 @@ class StorageService {
 
       if (cafe) {
         localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(cafe));
+        this.ensureRealtimeSubscribed(cafe.id);
         this.notifyLocal('CAFE_UPDATED', cafe);
       }
       // A null here means the request failed (apiFetch swallows errors), so
@@ -493,7 +535,7 @@ class StorageService {
   public updateCafe(cafe: CafeInfo): CafeInfo {
     localStorage.setItem(STORAGE_KEYS.CAFE, JSON.stringify(cafe));
     this.notify('CAFE_UPDATED', cafe);
-    this.apiFetch('/cafe', { method: 'PUT', body: JSON.stringify(cafe) });
+    this.apiFetch('/cafe', { method: 'PUT', body: JSON.stringify(cafe), auth: true });
     return cafe;
   }
 
@@ -526,7 +568,7 @@ class StorageService {
     };
     tables.push(newTable);
     this.saveTables(tables);
-    this.apiFetch('/tables', { method: 'POST', body: JSON.stringify(table) });
+    this.apiFetch('/tables', { method: 'POST', body: JSON.stringify(table), auth: true });
     return newTable;
   }
 
@@ -536,14 +578,14 @@ class StorageService {
     if (idx === -1) return null;
     tables[idx] = { ...tables[idx], ...updates };
     this.saveTables(tables);
-    this.apiFetch(`/tables/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+    this.apiFetch(`/tables/${id}`, { method: 'PATCH', body: JSON.stringify(updates), auth: true });
     return tables[idx];
   }
 
   public deleteTable(id: string): boolean {
     const tables = this.getTables().filter((t) => t.id !== id);
     this.saveTables(tables);
-    this.apiFetch(`/tables/${id}`, { method: 'DELETE' });
+    this.apiFetch(`/tables/${id}`, { method: 'DELETE', auth: true });
     return true;
   }
 
@@ -574,7 +616,7 @@ class StorageService {
     };
     cats.push(newCat);
     this.saveCategories(cats);
-    this.apiFetch('/categories', { method: 'POST', body: JSON.stringify({ name, icon }) });
+    this.apiFetch('/categories', { method: 'POST', body: JSON.stringify({ name, icon }), auth: true });
     return newCat;
   }
 
@@ -588,14 +630,14 @@ class StorageService {
       ...(icon ? { icon } : {}),
     };
     this.saveCategories(cats);
-    this.apiFetch(`/categories/${id}`, { method: 'PUT', body: JSON.stringify({ name, icon }) });
+    this.apiFetch(`/categories/${id}`, { method: 'PUT', body: JSON.stringify({ name, icon }), auth: true });
     return cats[idx];
   }
 
   public deleteCategory(id: string): boolean {
     const cats = this.getCategories().filter((c) => c.id !== id);
     this.saveCategories(cats);
-    this.apiFetch(`/categories/${id}`, { method: 'DELETE' });
+    this.apiFetch(`/categories/${id}`, { method: 'DELETE', auth: true });
     return true;
   }
 
@@ -622,7 +664,7 @@ class StorageService {
     };
     items.push(newItem);
     this.saveMenuItems(items);
-    this.apiFetch('/menu', { method: 'POST', body: JSON.stringify(itemData) });
+    this.apiFetch('/menu', { method: 'POST', body: JSON.stringify(itemData), auth: true });
     return newItem;
   }
 
@@ -632,7 +674,7 @@ class StorageService {
     if (idx === -1) return null;
     items[idx] = { ...items[idx], ...updates };
     this.saveMenuItems(items);
-    this.apiFetch(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    this.apiFetch(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(updates), auth: true });
     return items[idx];
   }
 
@@ -642,7 +684,7 @@ class StorageService {
     if (!item) return false;
     item.isAvailable = !item.isAvailable;
     this.saveMenuItems(items);
-    this.apiFetch(`/menu/${id}/availability`, { method: 'PATCH' });
+    this.apiFetch(`/menu/${id}/availability`, { method: 'PATCH', auth: true });
     return item.isAvailable;
   }
 
@@ -653,7 +695,7 @@ class StorageService {
   public deleteMenuItem(id: string): boolean {
     const items = this.getMenuItems().filter((i) => i.id !== id);
     this.saveMenuItems(items);
-    this.apiFetch(`/menu/${id}`, { method: 'DELETE' });
+    this.apiFetch(`/menu/${id}`, { method: 'DELETE', auth: true });
     return true;
   }
 
@@ -979,7 +1021,7 @@ class StorageService {
 
     if (!order) {
       this.updateTable(tableId, { status: 'available', activeOrderId: null });
-      this.apiFetch(`/tables/${tableId}/settle`, { method: 'POST' }).catch(() => {});
+      this.apiFetch(`/tables/${tableId}/settle`, { method: 'POST', auth: true }).catch(() => {});
       return null;
     }
 
@@ -1000,7 +1042,7 @@ class StorageService {
     this.releaseTableIfNoOpenBill(orders, order.tableId);
     this.notify('ORDERS_UPDATED', orders);
 
-    this.apiFetch(`/tables/${order.tableId}/settle`, { method: 'POST' }).catch(() => {});
+    this.apiFetch(`/tables/${order.tableId}/settle`, { method: 'POST', auth: true }).catch(() => {});
     return order;
   }
 
@@ -1121,7 +1163,7 @@ class StorageService {
 
     this.saveOrders(orders);
     soundService.playStatusUpdateBlip();
-    this.apiFetch(`/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    this.apiFetch(`/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }), auth: true });
     return order;
   }
 
@@ -1159,6 +1201,7 @@ class StorageService {
     this.apiFetch(`/orders/${orderId}/rounds/${roundNumber}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status }),
+      auth: true,
     });
     return order;
   }
@@ -1200,6 +1243,7 @@ class StorageService {
     this.apiFetch(`/orders/${orderId}/prep-time`, {
       method: 'PATCH',
       body: JSON.stringify({ additionalOrTotalMinutes, isAdjustment, roundNumber }),
+      auth: true,
     });
     return order;
   }
@@ -1218,7 +1262,8 @@ class StorageService {
       }
     })();
     return this.apiFetch<DailyRevenueReport>(
-      `/revenue/daily?month=${encodeURIComponent(month)}&tz=${encodeURIComponent(timeZone)}`
+      `/revenue/daily?month=${encodeURIComponent(month)}&tz=${encodeURIComponent(timeZone)}`,
+      { auth: true }
     );
   }
 

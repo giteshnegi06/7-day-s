@@ -11,8 +11,6 @@ import Pusher from 'pusher-js';
 
 export type RealtimeResource = 'orders' | 'tables' | 'categories' | 'menu' | 'cafe' | 'service_requests';
 
-const CHANNEL = 'qr-ordering';
-
 let pusher: Pusher | null | undefined;
 
 function getPusher(): Pusher | null {
@@ -29,19 +27,24 @@ function getPusher(): Pusher | null {
   return pusher;
 }
 
+// The shared database now holds every cafe's data, so each cafe gets its own
+// Pusher channel — otherwise a change on one cafe would refresh every other
+// cafe's open tabs too.
 export function subscribeToResourceChanges(
+  cafeId: string,
   onChange: (resource: RealtimeResource) => void
 ): () => void {
   const client = getPusher();
-  if (!client) return () => {};
+  if (!client || !cafeId) return () => {};
 
-  const channel = client.subscribe(CHANNEL);
+  const channelName = `cafe-${cafeId}`;
+  const channel = client.subscribe(channelName);
   const handler = (data: { resource: RealtimeResource }) => onChange(data.resource);
   channel.bind('resource-updated', handler);
 
   return () => {
     channel.unbind('resource-updated', handler);
-    client.unsubscribe(CHANNEL);
+    client.unsubscribe(channelName);
   };
 }
 

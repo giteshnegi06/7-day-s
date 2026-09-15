@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ServiceRequest, ServiceRequestType } from '../types';
 import { storageService } from './storage';
 import { isRealtimeEnabled } from './realtime';
+import { getAuthToken, clearAuthToken } from './staff';
 
 // Table assistance requests ("Need Water" / "Call Server"). These go straight
 // to the server and are never cached locally — a request only matters while
@@ -20,9 +21,32 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   return body as T;
 }
 
+// Staff-only calls (viewing/resolving the board on the admin dashboard) need
+// the signed-in staff member's session token; create() stays public — it's
+// called from the customer's own order-tracking screen.
+async function authRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
+  const res = await fetch(`${apiBase}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  const body = await res.json().catch(() => null);
+  if (res.status === 401) {
+    clearAuthToken();
+  }
+  if (!res.ok) {
+    throw new Error((body && body.error) || `Request failed (${res.status})`);
+  }
+  return body as T;
+}
+
 export const serviceRequestService = {
   listPending(): Promise<ServiceRequest[]> {
-    return request<ServiceRequest[]>('/service-requests');
+    return authRequest<ServiceRequest[]>('/service-requests');
   },
 
   // Resolves to `duplicate: true` when that table already has the same kind
@@ -35,7 +59,7 @@ export const serviceRequestService = {
   },
 
   resolve(id: string): Promise<ServiceRequest> {
-    return request<ServiceRequest>(`/service-requests/${id}/resolve`, { method: 'PATCH' });
+    return authRequest<ServiceRequest>(`/service-requests/${id}/resolve`, { method: 'PATCH' });
   },
 };
 
