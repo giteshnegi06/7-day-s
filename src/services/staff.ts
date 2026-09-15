@@ -6,6 +6,9 @@ import { AdminUser } from '../types';
 // verified by the backend and an account list should never silently drift
 // out of sync with who can log in.
 const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
+// This app serves exactly one cafe — used as a fallback in login() below in
+// case the caller's own cached cafe info (cafe.id) hasn't loaded yet.
+const CAFE_ID = '7-days';
 
 // The backend now issues a session token on login (the shared database can no
 // longer tell staff apart by which cafe's dedicated DB they hit). Kept as a
@@ -117,7 +120,7 @@ export const staffService = {
   login(cafeId: string, email: string, password: string): Promise<AdminUser> {
     return request<{ token: string; user: AdminUser }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ cafeId, email, password }),
+      body: JSON.stringify({ cafeId: cafeId || CAFE_ID, email, password }),
     }).then(({ token, user }) => {
       setStoredToken(token);
       return user;

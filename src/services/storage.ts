@@ -4,6 +4,14 @@ import { soundService } from './sound';
 import { isRealtimeEnabled, subscribeToResourceChanges, RealtimeResource } from './realtime';
 import { getAuthToken, clearAuthToken } from './staff';
 
+// This app serves exactly one cafe. cafeBackend is now a shared multi-tenant
+// API (see the sibling cafeBackend repo), so every request must say which
+// cafe it's for: public routes (cafe/tables/menu/categories lookup, placing
+// an order) read it from a `cafeId` query param or request body; staff/admin
+// routes instead trust the cafe_id embedded in the signed-in session's JWT
+// and ignore any cafeId sent alongside it.
+const CAFE_ID = '7-days';
+
 const STORAGE_KEYS = {
   CAFE: 'negis_kitchen_info',
   TABLES: 'negis_kitchen_tables',
@@ -146,7 +154,7 @@ class StorageService {
       // Live updates pushed via Pusher when another device changes data. Uses
       // whatever cafe id is already cached; syncFromServer()/refreshCafe()
       // re-subscribe once the real one comes back from /cafe.
-      this.ensureRealtimeSubscribed(this.getCafe().id);
+      this.ensureRealtimeSubscribed(this.getCafe().id || CAFE_ID);
 
       // Initial cloud sync from Neon database
       this.syncFromServer();
@@ -232,8 +240,14 @@ class StorageService {
     const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
     const { auth, headers, ...rest } = options || {};
     const token = auth ? getAuthToken() : null;
+    // Public routes read the cafe from this query param; staff/admin routes
+    // (auth: true) derive it from the JWT instead and ignore it, but sending
+    // it along is harmless.
+    const withCafeId = endpoint.includes('cafeId=')
+      ? endpoint
+      : `${endpoint}${endpoint.includes('?') ? '&' : '?'}cafeId=${encodeURIComponent(CAFE_ID)}`;
     try {
-      const res = await fetch(`${apiBase}${endpoint}`, {
+      const res = await fetch(`${apiBase}${withCafeId}`, {
         ...rest,
         headers: {
           'Content-Type': 'application/json',
@@ -767,9 +781,13 @@ class StorageService {
   }
 
   public createOrder(
-    orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>,
+    orderDataIn: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>,
     options?: { forceNewOrder?: boolean }
   ): Order {
+    // Force the real cafe id here, once, so every downstream use — the order
+    // saved to local state, its later retry re-POST, and the two explicit
+    // creates below — all agree, regardless of what the caller passed in.
+    const orderData = { ...orderDataIn, cafeId: CAFE_ID };
     const orders = this.getOrders();
     const now = Date.now();
 
@@ -881,7 +899,7 @@ class StorageService {
       // poll overwrites this round's timer with it.
       this.apiFetch<Order>(`/orders${options?.forceNewOrder ? '?force=true' : ''}`, {
         method: 'POST',
-        body: JSON.stringify({ ...orderData, estimatedPrepTimeMin: newRoundPrepTime }),
+        body: JSON.stringify({ ...orderData, cafeId: CAFE_ID, estimatedPrepTimeMin: newRoundPrepTime }),
       }).catch(() => {});
 
       return existingActiveOrder;
@@ -940,7 +958,7 @@ class StorageService {
     this.ordersBeingSynced.add(id);
     this.apiFetch<Order>(`/orders${options?.forceNewOrder ? '?force=true' : ''}`, {
       method: 'POST',
-      body: JSON.stringify({ ...orderData, id, estimatedPrepTimeMin: resolvedPrepTime }),
+      body: JSON.stringify({ ...orderData, id, cafeId: CAFE_ID, estimatedPrepTimeMin: resolvedPrepTime }),
     })
       .then((serverOrder) => {
         if (serverOrder) {

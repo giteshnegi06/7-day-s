@@ -8,6 +8,10 @@ import { getAuthToken, clearAuthToken } from './staff';
 // to the server and are never cached locally — a request only matters while
 // it is pending, and staff screens must show the same live list.
 const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
+// This app serves exactly one cafe — cafeBackend is now shared/multi-tenant,
+// so create() (public) must say which cafe it's for; listPending()/resolve()
+// are staff-only and get their cafe from the signed-in JWT instead.
+const CAFE_ID = '7-days';
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase}${endpoint}`, {
@@ -45,8 +49,10 @@ async function authRequest<T>(endpoint: string, options?: RequestInit): Promise<
 }
 
 export const serviceRequestService = {
+  // Public (no auth) — polled by both the customer's own tracking screen and
+  // the staff Kitchen display, which isn't necessarily logged in either.
   listPending(): Promise<ServiceRequest[]> {
-    return authRequest<ServiceRequest[]>('/service-requests');
+    return request<ServiceRequest[]>(`/service-requests?cafeId=${encodeURIComponent(CAFE_ID)}`);
   },
 
   // Resolves to `duplicate: true` when that table already has the same kind
@@ -54,7 +60,7 @@ export const serviceRequestService = {
   create(tableId: string, tableNumber: string, type: ServiceRequestType): Promise<ServiceRequest & { duplicate?: boolean }> {
     return request<ServiceRequest & { duplicate?: boolean }>('/service-requests', {
       method: 'POST',
-      body: JSON.stringify({ tableId, tableNumber, type }),
+      body: JSON.stringify({ cafeId: CAFE_ID, tableId, tableNumber, type }),
     });
   },
 
