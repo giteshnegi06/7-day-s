@@ -7,7 +7,7 @@ import { AdminLayout } from './components/admin/AdminLayout';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { ResetPasswordView } from './components/admin/ResetPasswordView';
 import { soundService } from './services/sound';
-import { clearAuthToken } from './services/staff';
+import { clearAuthToken, getAuthToken } from './services/staff';
 import {
   ChefHat,
   Store,
@@ -91,6 +91,13 @@ export const App: React.FC = () => {
   // sit behind this login.
   const [staffUser, setStaffUser] = useState<AdminUser | null>(() => {
     try {
+      // A cached user with no matching session token is not actually signed
+      // in (e.g. a session from before token-based auth existed) — every
+      // authenticated call would silently 401 forever otherwise.
+      if (!getAuthToken()) {
+        sessionStorage.removeItem('cafe_staff_user');
+        return null;
+      }
       const raw = sessionStorage.getItem('cafe_staff_user');
       return raw ? (JSON.parse(raw) as AdminUser) : null;
     } catch {
@@ -124,6 +131,10 @@ export const App: React.FC = () => {
       if (type === 'MENU_UPDATED') setMenuItems(storageService.getMenuItems());
       if (type === 'TABLES_UPDATED') setTables(storageService.getTables());
       if (type === 'ORDERS_UPDATED' || type === 'NEW_ORDER') setOrders(storageService.getOrders());
+      // The session token was rejected (expired/invalid) by a real request —
+      // drop back to the login screen instead of sitting there looking
+      // signed-in while every action silently 401s.
+      if (type === 'AUTH_EXPIRED') handleStaffLogout();
     });
 
     return unsubscribe;

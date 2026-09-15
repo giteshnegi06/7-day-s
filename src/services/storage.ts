@@ -74,7 +74,8 @@ type EventType =
   | 'TABLES_UPDATED'
   | 'CAFE_UPDATED'
   | 'SERVICE_REQUESTS_UPDATED'
-  | 'NEW_ORDER';
+  | 'NEW_ORDER'
+  | 'AUTH_EXPIRED';
 
 type Listener = (type: EventType, payload?: unknown) => void;
 
@@ -257,8 +258,11 @@ class StorageService {
       });
       if (res.status === 401 && auth) {
         // Stale/expired/missing session token — same treatment as invalid
-        // credentials. Dropped so nothing keeps retrying with it.
+        // credentials. Dropped so nothing keeps retrying with it, and the app
+        // is told so it can drop back to the login screen instead of sitting
+        // there looking signed-in while every action silently 401s forever.
         clearAuthToken();
+        this.notify('AUTH_EXPIRED');
       }
       if (!res.ok) return null;
       return await res.json();
