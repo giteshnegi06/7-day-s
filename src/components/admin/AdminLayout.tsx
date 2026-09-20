@@ -217,76 +217,81 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </div>
       </aside>
 
-      {/* Mobile / tablet Top Header. Same sticky offset story as the sidebar:
-          App.tsx's nav bar sits above this at 53px (phone) / 57px (sm+), so
-          sticking to top-0 would slide this bar — and its menu button —
-          underneath it. */}
-      <div className="lg:hidden bg-stone-900 text-white p-4 flex items-center justify-between border-b border-stone-800 sticky top-[53px] sm:top-[57px] z-30">
-        <div className="flex items-center gap-2.5">
-          {cafe.logo ? (
-            <img
-              src={cafe.logo}
-              alt={cafe.name}
-              className="w-8 h-8 rounded-xl object-cover ring-1 ring-amber-500/20 shrink-0"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shrink-0">
-              <Store className="w-4 h-4" />
-            </div>
-          )}
-          <span className="font-bold text-sm tracking-tight">{cafe.name} Admin</span>
-        </div>
-
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 rounded-xl bg-stone-800 text-stone-300"
-        >
-          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
-      </div>
-
-      {/* Mobile Drawer */}
-      {isMobileMenuOpen && (
-        <div className="lg:hidden bg-stone-900 border-b border-stone-800 p-4 space-y-1 text-xs z-30">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeSection === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold ${
-                  isActive ? 'bg-amber-500 text-stone-950 font-black' : 'text-stone-300 hover:bg-stone-800'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </div>
-                {item.id === 'orders' && activeOrdersCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500 text-stone-950 font-bold">
-                    {activeOrdersCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          <div className="pt-2 border-t border-stone-800 flex items-center justify-between">
-            <button
-              onClick={() => onOpenCustomerMenu()}
-              className="text-amber-400 font-bold py-2 flex items-center gap-1.5"
-            >
-              <ExternalLink className="w-4 h-4" /> Customer View
-            </button>
-            <button
-              onClick={onLogout}
-              className="text-rose-400 font-bold py-2 flex items-center gap-1.5"
-            >
-              <LogOut className="w-4 h-4" /> Sign Out
-            </button>
+      {/* Mobile / tablet Top Header + Drawer, grouped in one sticky wrapper.
+          Same sticky offset story as the sidebar: App.tsx's nav bar sits
+          above this at 53px (phone) / 57px (sm+), so sticking to top-0
+          would slide this bar underneath it. Grouping the header and the
+          drawer together (rather than each sticking on its own) keeps the
+          drawer pinned directly under the header — instead of scrolling
+          away with the page — while the main content behind it stays
+          freely scrollable. */}
+      <div className="lg:hidden sticky top-[53px] sm:top-[57px] z-30">
+        <div className="bg-stone-900 text-white p-4 flex items-center justify-between border-b border-stone-800">
+          <div className="flex items-center gap-2.5">
+            {cafe.logo ? (
+              <img
+                src={cafe.logo}
+                alt={cafe.name}
+                className="w-8 h-8 rounded-xl object-cover ring-1 ring-amber-500/20 shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shrink-0">
+                <Store className="w-4 h-4" />
+              </div>
+            )}
+            <span className="font-bold text-sm tracking-tight">{cafe.name} Admin</span>
           </div>
+
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 rounded-xl bg-stone-800 text-stone-300"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
-      )}
+
+        {isMobileMenuOpen && (
+          <div className="bg-stone-900 border-b border-stone-800 p-4 space-y-1 text-xs max-h-[calc(100vh-120px)] overflow-y-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavClick(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold ${
+                    isActive ? 'bg-amber-500 text-stone-950 font-black' : 'text-stone-300 hover:bg-stone-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.id === 'orders' && activeOrdersCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500 text-stone-950 font-bold">
+                      {activeOrdersCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <div className="pt-2 border-t border-stone-800 flex items-center justify-between">
+              <button
+                onClick={() => onOpenCustomerMenu()}
+                className="text-amber-400 font-bold py-2 flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-4 h-4" /> Customer View
+              </button>
+              <button
+                onClick={onLogout}
+                className="text-rose-400 font-bold py-2 flex items-center gap-1.5"
+              >
+                <LogOut className="w-4 h-4" /> Sign Out
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Main Content Area */}
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
